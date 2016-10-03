@@ -2,6 +2,7 @@ package me.tnsi.jftp;
 
 import java.net.*;
 import java.io.*;
+import java.nio.file.Files;
 
 public class Jftp {
 
@@ -14,6 +15,14 @@ public class Jftp {
         if (dir.isDirectory()) {
             // do nothing
         } else {
+            try {
+                if (!dir.delete()) {
+                    throw new Exception();
+                }
+            } catch(Exception e) {
+                System.out.println("ERR: Invalid object at data path.");
+                throw new Exception("ERR: Invalid object at data path.");
+            }
             dir.mkdir();
         }
 

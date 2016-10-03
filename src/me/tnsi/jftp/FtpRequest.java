@@ -1,5 +1,7 @@
 package me.tnsi.jftp;
 
+import com.sun.corba.se.spi.activation.Server;
+
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -25,29 +27,39 @@ final class FtpRequest implements Runnable {
 
     private void processRequest() throws Exception {
         // output stream
-        DataOutputStream os = new DataOutputStream(socket.getOutputStream());
+        BufferedWriter os = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
 
         // input stream
         BufferedReader br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
         // Send Welcome Response to Client
-        response(os, "Response: 220 Welcome to JFTP." + CRLF);
+        response(os, "Response: 220 Welcome to JFTP.");
 
         // command loop
         // reference: https://en.wikipedia.org/wiki/List_of_FTP_server_return_codes
-        String commandRequest;
+        String commandRequest = "";
+        String commandExport = "";
+        String clientArg = "";
         while(true) {
             String commandLine = br.readLine();
-            StringTokenizer tokens = new StringTokenizer(commandLine);
-            String clientCommand = tokens.nextToken();
-            String clientArg = tokens.nextToken();
-            String commandExport = clientCommand + " " + clientArg;
+            String[] clientCommand = commandLine.split(" ");
 
-            if(clientCommand == "LIST") {
+            // Check and handle variable arguments in the received command
+            if(clientCommand.length == 1) {
+                // Only one element in split array
+                commandExport = clientCommand[0];
+            } else {
+                clientArg = clientCommand[1];
+                commandExport = clientCommand[0] + " " + clientArg;
+            }
+
+            commandExport = clientCommand + " " + clientArg;
+
+            if(clientCommand[0].equals("LIST")) {
                 ServerSocket dataSock = new ServerSocket(dataPort);
+                response(os, "Response: 225 Data Connection Open.");
                 while(true) {
                     Socket dataConn = dataSock.accept();
-                    response(os, "Response: 225 Data Connection Open." + CRLF);
 
                     // Create Data Handler
                     DataRequest dataHandler = new DataRequest(dataConn, commandExport);
@@ -57,20 +69,43 @@ final class FtpRequest implements Runnable {
 
                     // run
                     dThread.run();
+                    dataSock.close();
+                    response(os, "Response: 226 Closing Data Connection.");
+                    break;
+                }
 
+            }
+
+            if(clientCommand[0].equals("RETR")) {
+                ServerSocket dataSock = new ServerSocket(dataPort);
+                response(os, "Response: 225 Data Connection Open.");
+                while(true) {
+                    Socket dataConn = dataSock.accept();
+                    DataRequest dataHandler = new DataRequest(dataConn, commandExport);
+                    Thread dThread = new Thread(dataHandler);
+                    dThread.run();
+                    dataSock.close();
+                    response(os, "Response: 226 Closing Data Connection.");
+                    break;
                 }
             }
 
-            if(clientCommand == "RETR") {
-                response(os, "Response: 202 RETR not implemented." + CRLF);
+            if(clientCommand[0].equals("STOR")) {
+                ServerSocket dataSock = new ServerSocket(dataPort);
+                response(os, "Response: 225 Data Connection Open.");
+                while(true) {
+                    Socket dataConn = dataSock.accept();
+                    DataRequest dataHandler = new DataRequest(dataConn, commandExport);
+                    Thread dThread = new Thread(dataHandler);
+                    dThread.run();
+                    dataSock.close();
+                    response(os, "Response: 226 Closing Data Connection.");
+                    break;
+                }
             }
 
-            if(clientCommand == "STOR") {
-                response(os, "Response: 202 STOR not implemented." + CRLF);
-            }
-
-            if(clientCommand == "QUIT") {
-                response(os, "Response: 221 Closing connection." + CRLF);
+            if(clientCommand[0].equals("QUIT")) {
+                response(os, "Response: 221 Closing connection.");
                 break;
             }
 
@@ -82,9 +117,11 @@ final class FtpRequest implements Runnable {
         socket.close();
     }
 
-    private void response(DataOutputStream os, String res) throws Exception {
+    private void response(BufferedWriter os, String res) throws Exception {
         System.out.println(res);
-        os.writeBytes(res);
+        res = res + CRLF;
+        os.write(res, 0, res.length());
+        os.flush();
     }
 
     private ArrayList<String> getDirectory() {
